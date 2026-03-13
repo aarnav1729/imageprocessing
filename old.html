@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PanelGuard — Solar Fraud Detector</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+  :root {
+    --bg:#08090d; --s1:#0f1117; --s2:#161922; --s3:#1e222e;
+    --bd:#252a38; --bh:#353b4d; --tx:#dfe1e8; --td:#6e7590; --tm:#3e4460;
+    --red:#ff3b5c; --rd:rgba(255,59,92,.1); --rg:rgba(255,59,92,.25);
+    --amb:#f0a030; --ad:rgba(240,160,48,.1);
+    --grn:#00d48a; --gd:rgba(0,212,138,.1);
+    --blu:#4895ef; --bld:rgba(72,149,239,.1);
+    --m:'JetBrains Mono',monospace; --s:'Plus Jakarta Sans',system-ui,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--tx);font-family:var(--s);min-height:100vh}
+  .shell{max-width:1300px;margin:0 auto;padding:20px}
+
+  /* Header */
+  .hdr{display:flex;align-items:center;justify-content:space-between;padding-bottom:16px;border-bottom:1px solid var(--bd);margin-bottom:18px}
+  .hdr-l{display:flex;align-items:center;gap:11px}
+  .hdr-ico{width:36px;height:36px;border-radius:8px;display:grid;place-items:center;background:var(--rd);border:1.5px solid var(--red);font-size:17px}
+  .hdr-t{font-family:var(--m);font-size:16px;font-weight:600;letter-spacing:1.5px}
+  .hdr-st{font-family:var(--m);font-size:9px;color:var(--tm);letter-spacing:2px;text-transform:uppercase}
+  .bdg{font-family:var(--m);font-size:9px;padding:4px 10px;border-radius:12px;letter-spacing:1px;display:flex;align-items:center;gap:5px}
+  .bdg.ld{background:var(--ad);color:var(--amb);border:1px solid rgba(240,160,48,.2)}
+  .bdg.ok{background:var(--gd);color:var(--grn);border:1px solid rgba(0,212,138,.2)}
+  .dot{width:5px;height:5px;border-radius:50%;background:currentColor;animation:p 2s ease-in-out infinite}
+  @keyframes p{0%,100%{opacity:1}50%{opacity:.3}}
+
+  /* Info */
+  .info{background:var(--s1);border:1px solid var(--bd);border-radius:9px;padding:12px 16px;margin-bottom:16px;font-size:11px;color:var(--td);line-height:1.6;display:flex;gap:10px}
+  .info b{color:var(--tx);font-weight:500}
+  .info .ic{font-size:16px;flex-shrink:0}
+  .info .x{margin-left:auto;cursor:pointer;color:var(--tm);background:none;border:none;font-size:14px;flex-shrink:0}
+
+  /* Upload */
+  .upl{border:2px dashed var(--bh);border-radius:11px;padding:28px;text-align:center;cursor:pointer;transition:all .3s;margin-bottom:12px;background:var(--s1)}
+  .upl:hover,.upl.dr{border-color:var(--red);background:var(--rd)}
+  .upl h3{font-size:13px;font-weight:500;margin-bottom:2px}
+  .upl h3 em{color:var(--red);font-style:normal;font-weight:600}
+  .upl p{font-family:var(--m);font-size:9px;color:var(--tm);letter-spacing:1px}
+  input[type="file"]{display:none}
+
+  /* Thumbs */
+  .tbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .tbar .c{font-family:var(--m);font-size:10px;color:var(--td)}
+  .mb{font-family:var(--m);font-size:8px;letter-spacing:.8px;padding:4px 10px;border-radius:4px;border:1px solid var(--bd);background:transparent;color:var(--td);cursor:pointer;transition:all .2s}
+  .mb:hover{border-color:var(--td);color:var(--tx)}
+  .mb.dng:hover{border-color:var(--red);color:var(--red)}
+  .tg{display:flex;flex-wrap:wrap;gap:3px;max-height:130px;overflow-y:auto;padding:5px;background:var(--s1);border:1px solid var(--bd);border-radius:7px;margin-bottom:14px}
+  .ti{width:46px;height:46px;border-radius:3px;overflow:hidden;border:2px solid transparent;position:relative}
+  .ti img{width:100%;height:100%;object-fit:cover;display:block}
+  .ti.ok{border-color:var(--grn)} .ti.wk{border-color:var(--amb)} .ti.fl{border-color:var(--red);box-shadow:0 0 6px var(--rg)}
+  .ti .gd{position:absolute;top:1px;right:1px;width:4px;height:4px;border-radius:50%;background:var(--tm)}
+  .ti .gd.has{background:var(--grn)}
+
+  /* Controls */
+  .ctrl{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-bottom:14px}
+  .cg{display:flex;align-items:center;gap:4px;padding:6px 10px;background:var(--s1);border:1px solid var(--bd);border-radius:6px}
+  .cg .l{font-family:var(--m);font-size:8px;color:var(--tm);letter-spacing:1px;text-transform:uppercase}
+  .cg .v{font-family:var(--m);font-size:9px;color:var(--tx);background:var(--s2);border:1px solid var(--bd);padding:2px 6px;border-radius:3px}
+  select.v{cursor:pointer;outline:none;-webkit-appearance:none;appearance:none;padding-right:12px;background-image:url("data:image/svg+xml,%3Csvg width='7' height='4' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l2.5 2.5L6 1' stroke='%236e7590' stroke-width='1' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 3px center}
+  input[type="range"]{-webkit-appearance:none;width:60px;height:2px;background:var(--bd);border-radius:1px;outline:none}
+  input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;background:var(--red);cursor:pointer}
+  .sp{flex:1}
+  .btn{font-family:var(--m);font-size:10px;font-weight:500;letter-spacing:1.5px;text-transform:uppercase;padding:9px 22px;border:none;border-radius:6px;cursor:pointer;transition:all .2s}
+  .bg{background:var(--red);color:#fff} .bg:hover:not(:disabled){box-shadow:0 0 18px var(--rg)} .bg:disabled{opacity:.3;cursor:not-allowed}
+  .bs{background:var(--s3);color:var(--amb);border:1px solid rgba(240,160,48,.3);display:none}
+
+  /* Progress */
+  .prg{background:var(--s1);border:1px solid var(--bd);border-radius:8px;padding:12px 16px;margin-bottom:14px;display:none}
+  .prg.on{display:block}
+  .prg-t{display:flex;justify-content:space-between;margin-bottom:5px}
+  .prg-ph{font-family:var(--m);font-size:9px;color:var(--td);letter-spacing:1px;text-transform:uppercase}
+  .prg-pc{font-family:var(--m);font-size:11px;color:var(--red);font-weight:500}
+  .prg-bx{height:3px;background:var(--bd);border-radius:2px;overflow:hidden;margin-bottom:5px}
+  .prg-fl{height:100%;background:var(--red);width:0%;transition:width .3s}
+  .prg-mt{display:flex;gap:14px;font-family:var(--m);font-size:8px;color:var(--tm);letter-spacing:.5px}
+  .prg-mt em{font-style:normal;color:var(--td)}
+
+  /* Log */
+  .logx{background:var(--s1);border:1px solid var(--bd);border-radius:7px;max-height:100px;overflow-y:auto;padding:7px 10px;margin-bottom:14px;font-family:var(--m);font-size:8px;color:var(--tm);display:none}
+  .logx.on{display:block} .logx .r{padding:1px 0;display:flex;gap:5px} .logx .ts{color:var(--tm)} .logx .ok{color:var(--grn)} .logx .wr{color:var(--amb)} .logx .er{color:var(--red)}
+
+  /* ═══ RESULTS ═══ */
+  .res{display:none} .res.on{display:block;animation:fu .4s ease}
+  @keyframes fu{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+  .sstrip{display:flex;gap:8px;margin-bottom:16px}
+  .sc{flex:1;background:var(--s1);border:1px solid var(--bd);border-radius:9px;padding:12px 14px;text-align:center}
+  .sc .n{font-family:var(--m);font-size:22px;font-weight:600} .sc .lb{font-family:var(--m);font-size:8px;color:var(--tm);letter-spacing:1.5px;text-transform:uppercase;margin-top:1px}
+  .nr{color:var(--red)} .na{color:var(--amb)} .ng{color:var(--grn)} .nb{color:var(--blu)}
+
+  .exp-r{display:flex;gap:6px;justify-content:flex-end;margin-bottom:12px}
+  .ft{font-family:var(--m);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--red);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+  .ft .ln{flex:1;height:1px;background:var(--bd)}
+
+  /* Flag card */
+  .fc{background:var(--s1);border-radius:10px;margin-bottom:11px;overflow:hidden;border-left:3px solid var(--red)}
+  .fc.sus{border-left-color:var(--amb)}
+  .fh{display:flex;align-items:center;justify-content:space-between;padding:9px 13px;background:var(--s2);border-bottom:1px solid var(--bd)}
+  .fh .lt{display:flex;align-items:center;gap:7px}
+  .fsev{font-family:var(--m);font-size:8px;font-weight:600;padding:2px 7px;border-radius:3px;letter-spacing:.5px}
+  .sh{background:var(--rd);color:var(--red)} .sm{background:var(--ad);color:var(--amb)}
+  .frsn{font-size:11px;font-weight:500}
+  .fid{font-family:var(--m);font-size:9px;color:var(--tm)}
+  .fb{padding:11px 13px}
+  .fpair{display:flex;gap:10px;align-items:flex-start;margin-bottom:8px}
+  .fib{flex:1;background:var(--bg);border:1px solid var(--bd);border-radius:7px;overflow:hidden}
+  .fib img{width:100%;display:block;max-height:200px;object-fit:contain;background:#000}
+  .fim{padding:6px 8px;font-family:var(--m);font-size:8px;color:var(--td);border-top:1px solid var(--bd);line-height:1.5}
+  .fim .fn{color:var(--tx);font-weight:500;display:block;margin-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fvs{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;flex-shrink:0;padding-top:50px}
+  .fvs .ic{font-size:16px}
+  .spill{font-family:var(--m);font-size:10px;font-weight:600;padding:3px 9px;border-radius:4px}
+  .pr{background:var(--rd);color:var(--red)} .pa{background:var(--ad);color:var(--amb)}
+  .fev{display:flex;flex-wrap:wrap;gap:5px;font-family:var(--m);font-size:8px}
+  .et{padding:3px 8px;border-radius:3px;letter-spacing:.3px;display:flex;align-items:center;gap:3px}
+  .eb{background:var(--bld);color:var(--blu)} .eg{background:var(--gd);color:var(--grn)} .ea{background:var(--ad);color:var(--amb)}
+  .em{background:rgba(160,100,255,.08);color:#a064ff} .ed{background:var(--s3);color:var(--td)}
+  .fact{display:flex;gap:5px;margin-top:8px;padding-top:8px;border-top:1px solid var(--bd)}
+  .fcw{margin-top:8px;background:#000;border-radius:5px;overflow:hidden;display:none}
+  .fcw.open{display:block} .fcw canvas{display:block;width:100%}
+  .nof{text-align:center;padding:28px;font-family:var(--m);font-size:11px;color:var(--grn);display:none}
+  .footer{text-align:center;padding:16px 0 8px;border-top:1px solid var(--bd);margin-top:20px;font-family:var(--m);font-size:7px;color:var(--tm);letter-spacing:1px}
+  @media(max-width:768px){.sstrip{flex-wrap:wrap}.sc{flex:1 1 45%}.fpair{flex-direction:column}.fvs{flex-direction:row;padding-top:0}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="hdr">
+    <div class="hdr-l">
+      <div class="hdr-ico">🛡</div>
+      <div><div class="hdr-t">PanelGuard</div><div class="hdr-st">Installation Fraud Detector</div></div>
+    </div>
+    <div id="cvS" class="bdg ld"><span class="dot"></span><span>Loading OpenCV…</span></div>
+  </header>
+
+  <div class="info" id="info">
+    <span class="ic">🔍</span>
+    <div>
+      Every photo is split into a <b>peripheral ring</b> (top 15%, bottom 15%, left/right 20%) where background structures live, and the
+      <b>center is fully masked out</b> since panels and people always sit there. Matching uses <b>strict homography verification</b> —
+      random feature matches don't count; only geometrically consistent backgrounds that prove the camera saw the same physical structures.
+      GPS + EXIF timestamps cross-check the visual evidence. Only <b>confirmed duplicates</b> are shown.
+    </div>
+    <button class="x" onclick="this.parentElement.style.display='none'">✕</button>
+  </div>
+
+  <div class="upl" id="UZ"><h3>Drop installation photos or <em>browse</em></h3><p>400+ JPG/PNG/WEBP &bull; EXIF auto-extracted</p></div>
+  <input type="file" id="FI" multiple accept="image/*">
+
+  <div class="tbar"><span class="c" id="iCt">0 images</span><div style="display:flex;gap:3px"><button class="mb" id="bAdd">+ Add</button><button class="mb dng" id="bClr">Clear</button></div></div>
+  <div class="tg" id="TG"></div>
+
+  <div class="ctrl">
+    <div class="cg"><span class="l">Resize</span><select class="v" id="cSz"><option value="500" selected>500px</option><option value="700">700px</option></select></div>
+    <div class="cg"><span class="l">Features</span><input type="range" id="cFt" min="400" max="1500" value="800" step="100"><span class="v" id="cFtV">800</span></div>
+    <div class="cg"><span class="l">GPS radius</span><select class="v" id="cGPS"><option value="30">30m</option><option value="50" selected>50m</option><option value="100">100m</option></select></div>
+    <div class="sp"></div>
+    <button class="btn bg" id="bRun" disabled>▶ Detect Fraud</button>
+    <button class="btn bs" id="bStp">■ Stop</button>
+  </div>
+
+  <div class="prg" id="prg">
+    <div class="prg-t"><span class="prg-ph" id="pPh">Extracting…</span><span class="prg-pc" id="pPc">0%</span></div>
+    <div class="prg-bx"><div class="prg-fl" id="pFl"></div></div>
+    <div class="prg-mt"><span>Done: <em id="pD">0</em>/<em id="pT">0</em></span><span>Pairs: <em id="pP">0</em></span><span>Flagged: <em id="pF">0</em></span><span>ETA: <em id="pE">—</em></span></div>
+  </div>
+  <div class="logx" id="LG"></div>
+
+  <div class="res" id="res">
+    <div class="sstrip">
+      <div class="sc"><div class="n nb" id="rT">0</div><div class="lb">Scanned</div></div>
+      <div class="sc"><div class="n nr" id="rF">0</div><div class="lb">Confirmed Fraud</div></div>
+      <div class="sc"><div class="n na" id="rS">0</div><div class="lb">Suspicious</div></div>
+      <div class="sc"><div class="n ng" id="rC">0</div><div class="lb">Unique Sites</div></div>
+    </div>
+    <div class="exp-r"><button class="mb" id="eJ">Export JSON</button><button class="mb" id="eC">Export CSV</button></div>
+    <div class="ft"><span>🚩 Flagged Duplicate Installations</span><span class="ln"></span></div>
+    <div id="fList"></div>
+    <div class="nof" id="noF">✓ No duplicate installations detected — all photos appear to be unique sites.</div>
+  </div>
+
+  <footer class="footer">PanelGuard v2.0 — Peripheral-Ring Masking · Strict Homography · EXIF GPS/Time · Client-side</footer>
+</div>
+
+<script async src="https://docs.opencv.org/4.9.0/opencv.js" onload="onCvLoaded()" id="cvJS"></script>
+<script>
+let cvOK=false, running=false, stop=false;
+let imgs=[];   // {id,name,url,el,canvas,ringCanvas,kp,des,kpN,exif}
+let flags=[];  // confirmed fraud pairs only
+
+function onCvLoaded(){if(typeof cv!=='undefined')cv.getBuildInformation?cvInit():(cv['onRuntimeInitialized']=cvInit)}
+function cvInit(){cvOK=true;const b=document.getElementById('cvS');b.className='bdg ok';b.innerHTML='<span class="dot"></span><span>Ready</span>';ckRun()}
+document.getElementById('cvJS').onerror=()=>{const b=document.getElementById('cvS');b.className='bdg';b.style.cssText='background:var(--rd);color:var(--red);border:1px solid rgba(255,59,92,.2)';b.innerHTML='<span class="dot"></span><span>Failed</span>'}
+
+const cFt=document.getElementById('cFt');
+cFt.oninput=()=>document.getElementById('cFtV').textContent=cFt.value;
+
+// ═══ UPLOAD + EXIF ═══
+const UZ=document.getElementById('UZ'),FI=document.getElementById('FI');
+UZ.addEventListener('click',()=>FI.click());
+['dragenter','dragover'].forEach(e=>UZ.addEventListener(e,ev=>{ev.preventDefault();UZ.classList.add('dr')}));
+['dragleave','drop'].forEach(e=>UZ.addEventListener(e,ev=>{ev.preventDefault();UZ.classList.remove('dr')}));
+UZ.addEventListener('drop',e=>addFiles(e.dataTransfer.files));
+FI.addEventListener('change',e=>addFiles(e.target.files));
+document.getElementById('bAdd').onclick=()=>FI.click();
+document.getElementById('bClr').onclick=()=>{imgs.forEach(i=>URL.revokeObjectURL(i.url));imgs=[];flags=[];document.getElementById('TG').innerHTML='';updN()};
+
+function addFiles(fl){
+  [...fl].filter(f=>f.type.startsWith('image/')).forEach(f=>{
+    const url=URL.createObjectURL(f), el=new Image();
+    el.onload=()=>{
+      const id=imgs.length;
+      const e={id,name:f.name,url,el,canvas:null,ringCanvas:null,kp:null,des:null,kpN:0,exif:{lat:null,lon:null,time:null}};
+      imgs.push(e);
+      mkTh(id,url);
+      parseEXIF(f).then(x=>{e.exif=x;if(x.lat!==null){const d=document.querySelector(`#th${id} .gd`);if(d)d.classList.add('has')}});
+      updN();
+    };
+    el.src=url;
+  });
+}
+
+function mkTh(id,url){
+  const d=document.createElement('div');d.className='ti';d.id='th'+id;
+  d.innerHTML=`<img src="${url}"><span class="gd"></span>`;
+  document.getElementById('TG').appendChild(d);
+}
+function updN(){document.getElementById('iCt').textContent=imgs.length+' images';ckRun()}
+function ckRun(){document.getElementById('bRun').disabled=!(cvOK&&imgs.length>=2)}
+
+// ═══ EXIF (binary) ═══
+async function parseEXIF(file){
+  const r={lat:null,lon:null,time:null};
+  try{
+    const buf=await file.slice(0,131072).arrayBuffer();
+    const v=new DataView(buf);
+    if(v.getUint16(0)!==0xFFD8)return r;
+    let o=2;
+    while(o<v.byteLength-4){
+      const mk=v.getUint16(o);
+      if(mk===0xFFE1){parseAPP1(v,o+4,v.getUint16(o+2)-2,r);break}
+      if((mk&0xFF00)!==0xFF00)break;
+      o+=2+v.getUint16(o+2);
+    }
+  }catch(e){}
+  return r;
+}
+function parseAPP1(v,s,len,r){
+  if(String.fromCharCode(v.getUint8(s),v.getUint8(s+1),v.getUint8(s+2),v.getUint8(s+3))!=='Exif')return;
+  const T=s+6,le=v.getUint16(T)===0x4949;
+  const g16=o=>v.getUint16(T+o,le), g32=o=>v.getUint32(T+o,le);
+  const rat=o=>{const n=g32(o),d=g32(o+4);return d?n/d:0};
+  const rStr=(o,c)=>{let s='';for(let i=0;i<c-1;i++)s+=String.fromCharCode(v.getUint8(T+o+i));return s.trim()};
+  const dms=(d,m,s,ref)=>{let dec=d+m/60+s/3600;if(ref==='S'||ref==='W')dec=-dec;return dec};
+  function ifd(off){
+    try{
+      const cnt=g16(off);let gpsOff=null;
+      for(let i=0;i<cnt;i++){
+        const eo=off+2+i*12,tag=g16(eo),tp=g16(eo+2),cn=g32(eo+4),vo=g32(eo+8);
+        if((tag===0x9003||tag===0x0132)&&!r.time){if(cn>4)r.time=rStr(vo,cn);else r.time=rStr(eo+8,cn)}
+        if(tag===0x8825)gpsOff=vo;
+        if(tag===0x8769)ifd(vo);
+      }
+      if(gpsOff){
+        const gc=g16(gpsOff);let lr='N',lnr='E',lD=0,lM=0,lS=0,nD=0,nM=0,nS=0;
+        for(let i=0;i<gc;i++){
+          const eo=gpsOff+2+i*12,gt=g16(eo),gcn=g32(eo+4),gv=g32(eo+8);
+          if(gt===1)lr=String.fromCharCode(v.getUint8(T+eo+8));
+          if(gt===3)lnr=String.fromCharCode(v.getUint8(T+eo+8));
+          if(gt===2&&gcn===3){lD=rat(gv);lM=rat(gv+8);lS=rat(gv+16)}
+          if(gt===4&&gcn===3){nD=rat(gv);nM=rat(gv+8);nS=rat(gv+16)}
+        }
+        if(lD||lM||lS)r.lat=dms(lD,lM,lS,lr);
+        if(nD||nM||nS)r.lon=dms(nD,nM,nS,lnr);
+      }
+    }catch(e){}
+  }
+  ifd(g32(4));
+}
+
+// ═══ LOG / PROG ═══
+function log(m,c){const L=document.getElementById('LG');L.classList.add('on');const t=new Date().toLocaleTimeString('en',{hour12:false});L.innerHTML+=`<div class="r"><span class="ts">[${t}]</span><span class="${c||''}">${m}</span></div>`;L.scrollTop=L.scrollHeight}
+function sp(pc,d,t,p,f,e){document.getElementById('pFl').style.width=pc+'%';document.getElementById('pPc').textContent=Math.round(pc)+'%';if(d!==undefined)document.getElementById('pD').textContent=d;if(t!==undefined)document.getElementById('pT').textContent=t;if(p!==undefined)document.getElementById('pP').textContent=p;if(f!==undefined)document.getElementById('pF').textContent=f;if(e!==undefined)document.getElementById('pE').textContent=e}
+
+// ═══════════════════════════════════════
+//  CORE: PERIPHERAL RING MASK
+// ═══════════════════════════════════════
+// Instead of a simple center rectangle, we keep ONLY the outer ring:
+//  - Top strip (15% height)
+//  - Bottom strip (15% height)
+//  - Left strip (20% width)  — between top/bottom strips
+//  - Right strip (20% width) — between top/bottom strips
+// Everything else (center 60% x 70%) is blacked out.
+// This isolates: roof edges, sky/trees above, ground/fence below, neighboring structures on sides.
+
+function makeRingCanvas(src) {
+  const c = document.createElement('canvas');
+  c.width = src.width; c.height = src.height;
+  const ctx = c.getContext('2d');
+
+  // Start black
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, c.width, c.height);
+
+  const w = c.width, h = c.height;
+  const topH = Math.round(h * 0.18);    // top 18%
+  const botH = Math.round(h * 0.18);    // bottom 18%
+  const sideW = Math.round(w * 0.22);   // sides 22%
+
+  // Draw only the ring regions from source
+  // Top strip (full width)
+  ctx.drawImage(src, 0, 0, w, topH, 0, 0, w, topH);
+  // Bottom strip (full width)
+  ctx.drawImage(src, 0, h - botH, w, botH, 0, h - botH, w, botH);
+  // Left strip (between top and bottom)
+  ctx.drawImage(src, 0, topH, sideW, h - topH - botH, 0, topH, sideW, h - topH - botH);
+  // Right strip (between top and bottom)
+  ctx.drawImage(src, w - sideW, topH, sideW, h - topH - botH, w - sideW, topH, sideW, h - topH - botH);
+
+  return c;
+}
+
+// ═══════════════════════════════════════
+//  CORE: STRICT HOMOGRAPHY MATCH
+// ═══════════════════════════════════════
+// The key insight: in the same village, random ORB features between different houses
+// will produce some matches but they WON'T form a coherent homography because the
+// geometry is different. Same house from different angles WILL produce a valid
+// homography with high inlier count.
+//
+// We require:
+// 1. Minimum 8 good matches (ratio-tested)
+// 2. Minimum 10 RANSAC inliers (geometric consistency)
+// 3. Inlier ratio >= 0.40 among good matches
+// 4. Homography determinant sanity check (not degenerate)
+// 5. Reprojection spread check (inliers aren't all in one tiny cluster)
+
+function strictMatch(a, b) {
+  const result = { pass:false, score:0, good:0, inliers:0, raw:0, homoValid:false };
+
+  if (!a.des || !b.des || a.des.rows < 10 || b.des.rows < 10) return result;
+
+  const bf = new cv.BFMatcher(cv.NORM_HAMMING, true); // crossCheck=true for stricter matches
+  const rawMatches = new cv.DMatchVector();
+  bf.match(a.des, b.des, rawMatches);
+  result.raw = rawMatches.size();
+
+  // Sort by distance and take top matches
+  const all = [];
+  for (let i = 0; i < rawMatches.size(); i++) all.push(rawMatches.get(i));
+  all.sort((x,y) => x.distance - y.distance);
+
+  // Adaptive distance threshold: take matches below median distance * 0.8
+  // This is stricter than Lowe's ratio for cross-checked matches
+  if (all.length < 8) { rawMatches.delete(); bf.delete(); return result; }
+
+  const medianDist = all[Math.floor(all.length / 2)].distance;
+  const distThresh = Math.min(medianDist * 0.7, 45); // hard cap at 45
+  const good = all.filter(m => m.distance < distThresh);
+  result.good = good.length;
+
+  if (good.length < 8) { rawMatches.delete(); bf.delete(); return result; }
+
+  // Homography with RANSAC
+  const srcPts = [], dstPts = [];
+  for (const m of good) {
+    const p1 = a.kp.get(m.queryIdx).pt, p2 = b.kp.get(m.trainIdx).pt;
+    srcPts.push(p1.x, p1.y);
+    dstPts.push(p2.x, p2.y);
+  }
+  const sM = cv.matFromArray(good.length, 1, cv.CV_32FC2, srcPts);
+  const dM = cv.matFromArray(good.length, 1, cv.CV_32FC2, dstPts);
+  const mask = new cv.Mat();
+
+  try {
+    const H = cv.findHomography(sM, dM, cv.RANSAC, 3.0, mask); // tighter reprojection threshold
+
+    // Count inliers
+    let inliers = 0;
+    const inlierIndices = [];
+    for (let r = 0; r < mask.rows; r++) {
+      if (mask.data[r]) { inliers++; inlierIndices.push(r); }
+    }
+    result.inliers = inliers;
+
+    // CHECK 1: Minimum inlier count
+    if (inliers < 10) { H.delete(); throw 'low_inliers'; }
+
+    // CHECK 2: Inlier ratio among good matches
+    const inlierRatio = inliers / good.length;
+    if (inlierRatio < 0.35) { H.delete(); throw 'low_ratio'; }
+
+    // CHECK 3: Homography determinant (reject degenerate transforms)
+    const hData = [];
+    for (let i = 0; i < 9; i++) hData.push(H.doubleAt(Math.floor(i/3), i%3));
+    const det = hData[0]*(hData[4]*hData[8]-hData[5]*hData[7])
+              - hData[1]*(hData[3]*hData[8]-hData[5]*hData[6])
+              + hData[2]*(hData[3]*hData[7]-hData[4]*hData[6]);
+    if (Math.abs(det) < 1e-4 || Math.abs(det) > 1e6) { H.delete(); throw 'degenerate'; }
+
+    // CHECK 4: Inlier spatial spread — ensure they're not all clustered in one corner
+    const inlierPts = inlierIndices.map(i => {
+      const p = a.kp.get(good[i].queryIdx).pt;
+      return [p.x, p.y];
+    });
+    const xs = inlierPts.map(p=>p[0]), ys = inlierPts.map(p=>p[1]);
+    const xSpread = Math.max(...xs) - Math.min(...xs);
+    const ySpread = Math.max(...ys) - Math.min(...ys);
+    const imgDiag = Math.sqrt(a.canvas.width**2 + a.canvas.height**2);
+    const spreadRatio = Math.sqrt(xSpread**2 + ySpread**2) / imgDiag;
+    if (spreadRatio < 0.15) { H.delete(); throw 'clustered'; } // inliers cover <15% of image = noise cluster
+
+    // ALL CHECKS PASSED — compute score
+    result.homoValid = true;
+    result.pass = true;
+
+    // Score weights real geometric evidence
+    const inlierScore = Math.min(1, inliers / 30) * 50;        // max 50 from inlier count
+    const ratioScore = Math.min(1, inlierRatio / 0.7) * 30;    // max 30 from inlier ratio
+    const spreadScore = Math.min(1, spreadRatio / 0.4) * 20;    // max 20 from spatial spread
+    result.score = Math.round(inlierScore + ratioScore + spreadScore);
+
+    H.delete();
+  } catch(e) {
+    // Homography failed checks — not a match
+    result.pass = false;
+  }
+
+  sM.delete(); dM.delete(); mask.delete(); rawMatches.delete(); bf.delete();
+  return result;
+}
+
+// ═══════════════════════════════════════
+//  MAIN PIPELINE
+// ═══════════════════════════════════════
+document.getElementById('bRun').addEventListener('click', run);
+document.getElementById('bStp').addEventListener('click', () => { stop = true; });
+
+async function run() {
+  if (running || !cvOK || imgs.length < 2) return;
+  running = true; stop = false; flags = [];
+  document.getElementById('bRun').style.display = 'none';
+  document.getElementById('bStp').style.display = '';
+  document.getElementById('prg').classList.add('on');
+  document.getElementById('LG').innerHTML = '';
+  document.getElementById('res').classList.remove('on');
+
+  const maxFeat = parseInt(cFt.value);
+  const gpsR = parseInt(document.getElementById('cGPS').value);
+  const resz = parseInt(document.getElementById('cSz').value);
+  const n = imgs.length;
+
+  log(`Scan started: ${n} images, features=${maxFeat}, GPS radius=${gpsR}m`);
+  const gpsN = imgs.filter(i => i.exif.lat !== null).length;
+  log(`EXIF GPS found: ${gpsN}/${n}`, gpsN > 0 ? 'ok' : 'wr');
+
+  const t0 = performance.now();
+
+  // ─── PHASE 1: Extract features from peripheral ring only ───
+  document.getElementById('pPh').textContent = 'Phase 1 — Extracting background ring features…';
+  sp(0, 0, n, 0, 0, '—');
+
+  for (let i = 0; i < n; i++) {
+    if (stop) break;
+    const img = imgs[i];
+    const th = document.getElementById('th' + i); th.className = 'ti wk';
+    try {
+      img.canvas = imgToCanvas(img.el, resz);
+      img.ringCanvas = makeRingCanvas(img.canvas);
+
+      const mat = cv.imread(img.ringCanvas);
+      const gray = new cv.Mat();
+      cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
+
+      const orb = new cv.ORB(maxFeat);
+      const kp = new cv.KeyPointVector();
+      const des = new cv.Mat();
+      orb.detectAndCompute(gray, new cv.Mat(), kp, des);
+
+      img.kp = kp; img.des = des; img.kpN = kp.size();
+      mat.delete(); gray.delete(); orb.delete();
+      th.className = 'ti ok';
+    } catch (e) {
+      log(`Error: ${img.name} — ${e.message}`, 'er');
+      th.className = 'ti'; img.kp = null; img.des = null;
+    }
+    const el = (performance.now() - t0) / 1000;
+    sp((i + 1) / n * 30, i + 1, n, 0, 0, fmtETA(el / (i + 1) * (n - i - 1)));
+    if (i % 8 === 0) await sleep(4);
+  }
+  if (stop) { done(); return; }
+  log(`Feature extraction complete`, 'ok');
+
+  // ─── PHASE 2: Build candidate pairs (GPS pre-filter) ───
+  document.getElementById('pPh').textContent = 'Phase 2 — Matching backgrounds (strict homography)…';
+  const valid = imgs.filter(x => x.des && x.des.rows >= 10);
+  const vn = valid.length;
+
+  // GPS pre-filter: only check pairs that are GPS-close OR missing GPS
+  const pairs = [];
+  for (let a = 0; a < vn; a++) {
+    for (let b = a + 1; b < vn; b++) {
+      const ia = valid[a], ib = valid[b];
+      const hasGPS = ia.exif.lat !== null && ib.exif.lat !== null;
+      if (hasGPS) {
+        const d = haversine(ia.exif.lat, ia.exif.lon, ib.exif.lat, ib.exif.lon);
+        if (d <= gpsR * 4) pairs.push([a, b, d]); // wider net, strict match narrows
+      } else {
+        pairs.push([a, b, null]); // no GPS, must check visually
+      }
+    }
+  }
+
+  const totalP = pairs.length, allP = vn * (vn - 1) / 2;
+  log(`Candidate pairs: ${totalP} (GPS filtered from ${allP} total, ${Math.round((1 - totalP / Math.max(allP, 1)) * 100)}% reduction)`);
+
+  let pd = 0, fc = 0;
+  const t1 = performance.now();
+
+  for (const [ai, bi, gpsDist] of pairs) {
+    if (stop) break;
+    const ia = valid[ai], ib = valid[bi];
+
+    const m = strictMatch(ia, ib);
+    pd++;
+
+    if (m.pass) {
+      const gpsClose = gpsDist !== null && gpsDist <= gpsR;
+      const bothGPS = ia.exif.lat !== null && ib.exif.lat !== null;
+      const hasDiffTime = ia.exif.time && ib.exif.time && ia.exif.time !== ib.exif.time;
+
+      // Determine severity
+      let severity;
+      if (m.score >= 55 || (m.score >= 35 && gpsClose)) severity = 'high';
+      else severity = 'medium';
+
+      const reasons = [];
+      if (m.homoValid) reasons.push('homography_valid');
+      if (gpsClose) reasons.push('gps_close');
+      if (bothGPS && !gpsClose && gpsDist !== null) reasons.push('gps_far');
+      if (hasDiffTime) reasons.push('diff_time');
+
+      flags.push({
+        i: ia.id, j: ib.id,
+        score: m.score, good: m.good, inliers: m.inliers, raw: m.raw,
+        gpsDist, gpsClose, severity, reasons
+      });
+      fc++;
+
+      document.getElementById('th' + ia.id).className = 'ti fl';
+      document.getElementById('th' + ib.id).className = 'ti fl';
+    }
+
+    const pct = 30 + (pd / totalP) * 65;
+    const e2 = (performance.now() - t1) / 1000;
+    sp(pct, undefined, undefined, pd, fc, fmtETA(e2 / pd * (totalP - pd)));
+    if (pd % 25 === 0) await sleep(3);
+  }
+
+  if (stop) { log('Stopped.', 'er'); done(); return; }
+  sp(100, n, n, pd, fc, '0s');
+
+  // ─── Deduplicate transitive flags ───
+  // If A↔B and B↔C flagged, cluster them but keep each pair as separate flag
+  const totalTime = ((performance.now() - t0) / 1000).toFixed(1);
+  log(`Scan complete: ${fc} flags in ${totalTime}s`, fc > 0 ? 'wr' : 'ok');
+
+  renderResults();
+  done();
+}
+
+function done() {
+  running = false; stop = false;
+  document.getElementById('bRun').style.display = '';
+  document.getElementById('bStp').style.display = 'none';
+}
+
+// ═══ RENDER ═══
+function renderResults() {
+  document.getElementById('res').classList.add('on');
+
+  const flaggedIds = new Set();
+  flags.forEach(f => { flaggedIds.add(f.i); flaggedIds.add(f.j); });
+
+  document.getElementById('rT').textContent = imgs.length;
+  document.getElementById('rF').textContent = flags.filter(f => f.severity === 'high').length;
+  document.getElementById('rS').textContent = flags.filter(f => f.severity === 'medium').length;
+  document.getElementById('rC').textContent = imgs.length - flaggedIds.size;
+
+  const list = document.getElementById('fList');
+  list.innerHTML = '';
+
+  if (flags.length === 0) { document.getElementById('noF').style.display = 'block'; return; }
+  document.getElementById('noF').style.display = 'none';
+
+  flags.sort((a, b) => {
+    if (a.severity !== b.severity) return a.severity === 'high' ? -1 : 1;
+    return b.score - a.score;
+  });
+
+  flags.forEach((f, idx) => {
+    const a = imgs[f.i], b = imgs[f.j];
+    const hi = f.severity === 'high';
+    const cid = 'fc' + idx;
+
+    const card = document.createElement('div');
+    card.className = 'fc' + (hi ? '' : ' sus');
+    card.innerHTML = `
+      <div class="fh">
+        <div class="lt">
+          <span class="fsev ${hi ? 'sh' : 'sm'}">${hi ? 'CONFIRMED FRAUD' : 'SUSPICIOUS'}</span>
+          <span class="frsn">Same background — ${hi ? 'different angle/person at same site' : 'review needed'}</span>
+        </div>
+        <span class="fid">FLAG-${String(idx + 1).padStart(3, '0')}</span>
+      </div>
+      <div class="fb">
+        <div class="fpair">
+          <div class="fib">
+            <img src="${a.url}">
+            <div class="fim">
+              <span class="fn">${a.name}</span>
+              ${a.exif.lat !== null ? `GPS: ${a.exif.lat.toFixed(5)}, ${a.exif.lon.toFixed(5)}<br>` : 'GPS: none<br>'}
+              ${a.exif.time || 'Time: unknown'}
+            </div>
+          </div>
+          <div class="fvs">
+            <span class="ic">${hi ? '🚨' : '⚠️'}</span>
+            <span class="spill ${hi ? 'pr' : 'pa'}">${f.score}%</span>
+            <span style="font-family:var(--m);font-size:7px;color:var(--tm)">${f.inliers} inliers</span>
+          </div>
+          <div class="fib">
+            <img src="${b.url}">
+            <div class="fim">
+              <span class="fn">${b.name}</span>
+              ${b.exif.lat !== null ? `GPS: ${b.exif.lat.toFixed(5)}, ${b.exif.lon.toFixed(5)}<br>` : 'GPS: none<br>'}
+              ${b.exif.time || 'Time: unknown'}
+            </div>
+          </div>
+        </div>
+        <div class="fev">
+          ${f.reasons.includes('homography_valid') ? '<span class="et eb">✓ Valid Homography</span>' : ''}
+          ${f.gpsClose ? `<span class="et eg">✓ GPS ${Math.round(f.gpsDist)}m</span>` : ''}
+          ${f.reasons.includes('gps_far') ? `<span class="et ed">GPS ${Math.round(f.gpsDist)}m</span>` : ''}
+          ${f.reasons.includes('diff_time') ? '<span class="et ea">⏱ Different timestamps</span>' : ''}
+          <span class="et em">⬡ Peripheral ring only</span>
+          <span class="et ed">${f.good} good · ${f.inliers} inliers · ${f.raw} raw</span>
+        </div>
+        <div class="fact">
+          <button class="mb" onclick="togViz('${cid}',${f.i},${f.j})">Show Match Map</button>
+        </div>
+        <div class="fcw" id="w${cid}"><canvas id="${cid}"></canvas></div>
+      </div>
+    `;
+    list.appendChild(card);
+  });
+}
+
+function togViz(cid, idxA, idxB) {
+  const w = document.getElementById('w' + cid);
+  if (w.classList.contains('open')) { w.classList.remove('open'); return; }
+  w.classList.add('open');
+  drawViz(cid, imgs[idxA], imgs[idxB]);
+}
+
+function drawViz(cid, ia, ib) {
+  const c = document.getElementById(cid);
+  const cA = ia.canvas, cB = ib.canvas;
+  const gap = 6;
+  c.width = cA.width + cB.width + gap;
+  c.height = Math.max(cA.height, cB.height);
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(cA, 0, 0);
+  ctx.drawImage(cB, cA.width + gap, 0);
+
+  // Draw ring mask overlay on both
+  ctx.fillStyle = 'rgba(255,59,92,0.12)';
+  [{cvs:cA, ox:0}, {cvs:cB, ox:cA.width + gap}].forEach(({cvs, ox}) => {
+    const w = cvs.width, h = cvs.height;
+    const tH = Math.round(h * .18), bH = Math.round(h * .18), sW = Math.round(w * .22);
+    // Fill center (masked area)
+    ctx.fillRect(ox + sW, tH, w - 2 * sW, h - tH - bH);
+    ctx.strokeStyle = 'rgba(255,59,92,0.35)'; ctx.lineWidth = 1; ctx.setLineDash([3,3]);
+    ctx.strokeRect(ox + sW, tH, w - 2 * sW, h - tH - bH);
+    ctx.setLineDash([]);
+  });
+
+  // Draw cross-checked matches
+  if (ia.des && ib.des && ia.des.rows > 0 && ib.des.rows > 0) {
+    const bf = new cv.BFMatcher(cv.NORM_HAMMING, true);
+    const raw = new cv.DMatchVector();
+    bf.match(ia.des, ib.des, raw);
+    const all = [];
+    for (let i = 0; i < raw.size(); i++) all.push(raw.get(i));
+    all.sort((x, y) => x.distance - y.distance);
+    const med = all.length > 0 ? all[Math.floor(all.length / 2)].distance : 50;
+    const thresh = Math.min(med * 0.7, 45);
+    const good = all.filter(m => m.distance < thresh).slice(0, 80);
+
+    good.forEach((m, i) => {
+      const p1 = ia.kp.get(m.queryIdx).pt, p2 = ib.kp.get(m.trainIdx).pt;
+      const hue = 190 - (i / good.length) * 150;
+      const alpha = .45 + .5 * (1 - i / good.length);
+      ctx.strokeStyle = `hsla(${hue},80%,55%,${alpha})`; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x + cA.width + gap, p2.y); ctx.stroke();
+      ctx.fillStyle = `hsla(${hue},80%,55%,.85)`;
+      ctx.beginPath(); ctx.arc(p1.x, p1.y, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(p2.x + cA.width + gap, p2.y, 2, 0, Math.PI * 2); ctx.fill();
+    });
+    raw.delete(); bf.delete();
+  }
+
+  ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.fillRect(0, c.height - 16, c.width, 16);
+  ctx.fillStyle = '#6e7590'; ctx.font = '8px JetBrains Mono';
+  ctx.fillText('RED = masked center (ignored) · Lines = background matches on peripheral ring only', 6, c.height - 5);
+}
+
+// ═══ EXPORT ═══
+document.getElementById('eJ').onclick = () => {
+  const d = {
+    scan: { images: imgs.length, flagged: flags.length, timestamp: new Date().toISOString() },
+    flags: flags.map(f => ({
+      severity: f.severity, score: f.score,
+      imageA: { name: imgs[f.i].name, gps: imgs[f.i].exif.lat ? [imgs[f.i].exif.lat, imgs[f.i].exif.lon] : null, time: imgs[f.i].exif.time },
+      imageB: { name: imgs[f.j].name, gps: imgs[f.j].exif.lat ? [imgs[f.j].exif.lat, imgs[f.j].exif.lon] : null, time: imgs[f.j].exif.time },
+      gpsDist: f.gpsDist, inliers: f.inliers, goodMatches: f.good, reasons: f.reasons
+    }))
+  };
+  dl('panelguard-report.json', JSON.stringify(d, null, 2), 'application/json');
+};
+document.getElementById('eC').onclick = () => {
+  let csv = 'Severity,Score,Image A,Image B,GPS Dist (m),Inliers,Good Matches,Reasons\n';
+  flags.forEach(f => {
+    csv += `${f.severity},${f.score},"${imgs[f.i].name}","${imgs[f.j].name}",${f.gpsDist !== null ? Math.round(f.gpsDist) : ''},${f.inliers},${f.good},"${f.reasons.join(';')}"\n`;
+  });
+  dl('panelguard-report.csv', csv, 'text/csv');
+};
+function dl(n, c, t) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([c], {type: t})); a.download = n; a.click(); }
+
+// ═══ HELPERS ═══
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function imgToCanvas(el, max) {
+  const c = document.createElement('canvas');
+  let w = el.naturalWidth, h = el.naturalHeight;
+  if (Math.max(w, h) > max) { const s = max / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
+  c.width = w; c.height = h; c.getContext('2d').drawImage(el, 0, 0, w, h); return c;
+}
+function haversine(a1, o1, a2, o2) {
+  const R = 6371e3, r = Math.PI / 180;
+  const d1 = (a2 - a1) * r, d2 = (o2 - o1) * r;
+  const a = Math.sin(d1 / 2) ** 2 + Math.cos(a1 * r) * Math.cos(a2 * r) * Math.sin(d2 / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+function fmtETA(s) { if (!isFinite(s) || s < 0) return '—'; if (s < 60) return Math.round(s) + 's'; return Math.round(s / 60) + 'm ' + Math.round(s % 60) + 's'; }
+</script>
+</body>
+</html>
