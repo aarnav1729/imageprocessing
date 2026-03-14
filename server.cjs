@@ -241,6 +241,28 @@ function fmtDate(val) {
   return String(val).trim();
 }
 
+function normalizeString(val) {
+  if (val === null || val === undefined) return "";
+  return String(val).trim();
+}
+
+function isObjectIdString(val) {
+  return /^[a-f\d]{24}$/i.test(normalizeString(val));
+}
+
+function fraudPairKey(flag) {
+  const left =
+    normalizeString(flag?.applicationIdA) ||
+    normalizeString(flag?.appIdA) ||
+    normalizeString(flag?.imageA);
+  const right =
+    normalizeString(flag?.applicationIdB) ||
+    normalizeString(flag?.appIdB) ||
+    normalizeString(flag?.imageB);
+  if (!left || !right) return "";
+  return [left, right].sort().join("::");
+}
+
 async function resolveFlagApplicationIds(flags) {
   const list = Array.isArray(flags) ? flags : [flags];
   const appNos = [
@@ -248,8 +270,15 @@ async function resolveFlagApplicationIds(flags) {
       list
         .flatMap((flag) => {
           const values = [];
-          if (!flag?.applicationIdA && flag?.appIdA) values.push(String(flag.appIdA).trim());
-          if (!flag?.applicationIdB && flag?.appIdB) values.push(String(flag.appIdB).trim());
+          const rawApplicationIdA = normalizeString(flag?.applicationIdA);
+          const rawApplicationIdB = normalizeString(flag?.applicationIdB);
+          const appIdA = normalizeString(flag?.appIdA);
+          const appIdB = normalizeString(flag?.appIdB);
+
+          if (appIdA) values.push(appIdA);
+          if (appIdB) values.push(appIdB);
+          if (rawApplicationIdA && !isObjectIdString(rawApplicationIdA)) values.push(rawApplicationIdA);
+          if (rawApplicationIdB && !isObjectIdString(rawApplicationIdB)) values.push(rawApplicationIdB);
           return values;
         })
         .filter(Boolean)
@@ -259,8 +288,8 @@ async function resolveFlagApplicationIds(flags) {
   if (!appNos.length) {
     return list.map((flag) => ({
       flag,
-      applicationIdA: String(flag?.applicationIdA || "").trim(),
-      applicationIdB: String(flag?.applicationIdB || "").trim(),
+      applicationIdA: isObjectIdString(flag?.applicationIdA) ? normalizeString(flag?.applicationIdA) : "",
+      applicationIdB: isObjectIdString(flag?.applicationIdB) ? normalizeString(flag?.applicationIdB) : "",
     }));
   }
 
@@ -268,17 +297,23 @@ async function resolveFlagApplicationIds(flags) {
     applicationNo: { $in: appNos },
   }).select("_id applicationNo");
   const appNoToId = new Map(
-    applications.map((application) => [String(application.applicationNo).trim(), String(application._id)])
+    applications.map((application) => [normalizeString(application.applicationNo), normalizeString(application._id)])
   );
 
   return list.map((flag) => ({
     flag,
-    applicationIdA:
-      String(flag?.applicationIdA || "").trim() ||
-      String(appNoToId.get(String(flag?.appIdA || "").trim()) || "").trim(),
-    applicationIdB:
-      String(flag?.applicationIdB || "").trim() ||
-      String(appNoToId.get(String(flag?.appIdB || "").trim()) || "").trim(),
+    applicationIdA: (() => {
+      const rawApplicationId = normalizeString(flag?.applicationIdA);
+      if (isObjectIdString(rawApplicationId)) return rawApplicationId;
+      const lookupKey = normalizeString(flag?.appIdA) || rawApplicationId;
+      return normalizeString(appNoToId.get(lookupKey));
+    })(),
+    applicationIdB: (() => {
+      const rawApplicationId = normalizeString(flag?.applicationIdB);
+      if (isObjectIdString(rawApplicationId)) return rawApplicationId;
+      const lookupKey = normalizeString(flag?.appIdB) || rawApplicationId;
+      return normalizeString(appNoToId.get(lookupKey));
+    })(),
   }));
 }
 
@@ -287,11 +322,11 @@ async function ensureFlagApplicationIds(flag) {
   const [resolved] = await resolveFlagApplicationIds(flag);
   let changed = false;
 
-  if (!flag.applicationIdA && resolved.applicationIdA) {
+  if (resolved.applicationIdA && normalizeString(flag.applicationIdA) !== resolved.applicationIdA) {
     flag.applicationIdA = resolved.applicationIdA;
     changed = true;
   }
-  if (!flag.applicationIdB && resolved.applicationIdB) {
+  if (resolved.applicationIdB && normalizeString(flag.applicationIdB) !== resolved.applicationIdB) {
     flag.applicationIdB = resolved.applicationIdB;
     changed = true;
   }
@@ -299,14 +334,30 @@ async function ensureFlagApplicationIds(flag) {
   return changed;
 }
 
-async function syncApplicationFraudState(applicationIds) {
-  const uniqueIds = [
-    ...new Set(
-      (applicationIds || [])
-        .map((applicationId) => String(applicationId || "").trim())
-        .filter(Boolean)
-    ),
+async function normalizeApplicationIds(applicationIds) {
+  const rawIds = [
+    ...new Set((applicationIds || []).map((applicationId) => normalizeString(applicationId)).filter(Boolean)),
   ];
+  if (!rawIds.length) return [];
+
+  const validIds = rawIds.filter(isObjectIdString);
+  const appNos = rawIds.filter((applicationId) => !isObjectIdString(applicationId));
+  if (!appNos.length) return validIds;
+
+  const applications = await Application.find({
+    applicationNo: { $in: appNos },
+  }).select("_id");
+
+  return [
+    ...new Set([
+      ...validIds,
+      ...applications.map((application) => normalizeString(application._id)).filter(Boolean),
+    ]),
+  ];
+}
+
+async function syncApplicationFraudState(applicationIds) {
+  const uniqueIds = await normalizeApplicationIds(applicationIds);
   if (!uniqueIds.length) return;
 
   const flags = await FraudFlag.find({
@@ -338,7 +389,7 @@ async function syncApplicationFraudState(applicationIds) {
 
   await Promise.all(
     uniqueIds.map((applicationId) =>
-      Application.findByIdAndUpdate(applicationId, {
+      Application.updateOne({ _id: applicationId }, {
         fraudMarked: nextState.get(applicationId) || "pending",
       })
     )
@@ -387,7 +438,7 @@ async function syncAllApplicationFraudStates() {
   );
   await Promise.all(
     resolvedIds.map((applicationId) =>
-      Application.findByIdAndUpdate(applicationId, {
+      Application.updateOne({ _id: applicationId }, {
         fraudMarked: nextState.get(applicationId) || "pending",
       })
     )
@@ -459,13 +510,14 @@ app.get("/api/all-image-list", async (req, res) => {
     const appNos = [...new Set(assets.map((asset) => asset.serial).filter(Boolean))];
     const apps = await Application.find({
       applicationNo: { $in: appNos },
-    }).select("_id applicationNo beneficiaryName sanctionName");
+    }).select("_id applicationNo beneficiaryName sanctionName fraudMarked");
     const appMap = new Map(apps.map((app) => [String(app.applicationNo), app]));
     const result = assets.map((asset) => {
       const app = asset.serial ? appMap.get(String(asset.serial)) : null;
       return {
         appNo: asset.serial || null,
         applicationId: app?._id || null,
+        historicalNegligence: app?.fraudMarked === "yes",
         assetId: asset.path,
         hasSerial: asset.hasSerial,
         beneficiary: app?.beneficiaryName || null,
@@ -810,15 +862,39 @@ app.post("/api/fraud-flags", async (req, res) => {
     const { flags, clearAll } = req.body;
     if (!flags || !Array.isArray(flags))
       return res.status(400).json({ error: "flags array required" });
+    let preservedCount = 0;
     if (clearAll) {
-      await FraudFlag.deleteMany({});
-      await Application.updateMany({}, { fraudMarked: "pending" });
+      const reviewedFlags = await FraudFlag.find({
+        markedFraud: { $ne: "pending" },
+      }).lean();
+      preservedCount = reviewedFlags.length;
+      const preservedKeys = new Set(
+        reviewedFlags.map((flag) => fraudPairKey(flag)).filter(Boolean)
+      );
+      const seenIncomingKeys = new Set();
+      const dedupedFlags = flags.filter((flag) => {
+        const key = fraudPairKey(flag);
+        if (!key) return true;
+        if (preservedKeys.has(key) || seenIncomingKeys.has(key)) return false;
+        seenIncomingKeys.add(key);
+        return true;
+      });
+      await FraudFlag.deleteMany({ markedFraud: "pending" });
+      const inserted = dedupedFlags.length
+        ? await FraudFlag.insertMany(dedupedFlags)
+        : [];
+      await syncAllApplicationFraudStates();
+      return res.json({
+        success: true,
+        count: inserted.length,
+        preserved: preservedCount,
+      });
     }
     const inserted = await FraudFlag.insertMany(flags);
     await syncApplicationFraudState(
       inserted.flatMap((flag) => [flag.applicationIdA, flag.applicationIdB])
     );
-    res.json({ success: true, count: inserted.length });
+    res.json({ success: true, count: inserted.length, preserved: preservedCount });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -960,7 +1036,7 @@ app.post("/api/fraud-flags/manual", async (req, res) => {
 
 app.get("/api/fraud-flags", async (req, res) => {
   try {
-    const { markedFraud, severity, search } = req.query;
+    const { markedFraud, severity, search, limit = 5000 } = req.query;
     const filter = {};
     if (markedFraud) filter.markedFraud = markedFraud;
     if (severity) filter.severity = severity;
@@ -975,7 +1051,7 @@ app.get("/api/fraud-flags", async (req, res) => {
         { sanctionB: re },
       ];
     }
-    res.json(await FraudFlag.find(filter).sort({ score: -1 }).limit(500));
+    res.json(await FraudFlag.find(filter).sort({ score: -1, createdAt: -1 }).limit(parseInt(limit, 10)));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -990,10 +1066,14 @@ app.patch("/api/fraud-flags/:id", async (req, res) => {
     await ensureFlagApplicationIds(updated);
     await updated.save();
     if (updated) {
-      await syncApplicationFraudState([
-        updated.applicationIdA,
-        updated.applicationIdB,
-      ]);
+      try {
+        await syncApplicationFraudState([
+          updated.applicationIdA,
+          updated.applicationIdB,
+        ]);
+      } catch (syncError) {
+        console.error("❌ Flag sync:", syncError.message);
+      }
     }
     res.json(updated);
   } catch (e) {

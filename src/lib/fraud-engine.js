@@ -150,6 +150,48 @@ export function makeRingCanvas(src) {
   return canvas;
 }
 
+export function makeFocusedRingCanvas(src) {
+  const canvas = document.createElement("canvas");
+  canvas.width = src.width;
+  canvas.height = src.height;
+  const context = canvas.getContext("2d");
+
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  const width = canvas.width;
+  const height = canvas.height;
+  const topHeight = Math.round(height * 0.22);
+  const bottomHeight = Math.round(height * 0.22);
+  const sideWidth = Math.round(width * 0.28);
+
+  context.drawImage(src, 0, 0, width, topHeight, 0, 0, width, topHeight);
+  context.drawImage(src, 0, height - bottomHeight, width, bottomHeight, 0, height - bottomHeight, width, bottomHeight);
+  context.drawImage(src, 0, topHeight, sideWidth, height - topHeight - bottomHeight, 0, topHeight, sideWidth, height - topHeight - bottomHeight);
+  context.drawImage(
+    src,
+    width - sideWidth,
+    topHeight,
+    sideWidth,
+    height - topHeight - bottomHeight,
+    width - sideWidth,
+    topHeight,
+    sideWidth,
+    height - topHeight - bottomHeight
+  );
+
+  return canvas;
+}
+
+function normalizeBeneficiaryKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(mr|mrs|ms|miss|shri|smt|kumari|dr)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function strictMatch(a, b) {
   const cv = window.cv;
   const result = { pass: false, score: 0, good: 0, inliers: 0, raw: 0, homoValid: false };
@@ -315,6 +357,52 @@ function updateProgress(onProgress, payload) {
   if (typeof onProgress === "function") onProgress(payload);
 }
 
+function makeMatchSource(item, mode = "base") {
+  if (mode === "focused") {
+    return {
+      canvas: item.focusedCanvas,
+      kp: item.focusedKp,
+      des: item.focusedDes,
+    };
+  }
+
+  return {
+    canvas: item.canvas,
+    kp: item.kp,
+    des: item.des,
+  };
+}
+
+function ensureFocusedFeatures(item, maxFeatures) {
+  const cv = window.cv;
+  if (item.focusedDes && item.focusedKp && item.focusedCanvas) return true;
+  if (!item.canvas) return false;
+
+  try {
+    item.focusedCanvas = makeFocusedRingCanvas(item.canvas);
+    const mat = cv.imread(item.focusedCanvas);
+    const gray = new cv.Mat();
+    cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
+
+    const orb = new cv.ORB(maxFeatures);
+    const kp = new cv.KeyPointVector();
+    const des = new cv.Mat();
+    orb.detectAndCompute(gray, new cv.Mat(), kp, des);
+
+    item.focusedKp = kp;
+    item.focusedDes = des;
+
+    mat.delete();
+    gray.delete();
+    orb.delete();
+    return true;
+  } catch {
+    item.focusedKp = null;
+    item.focusedDes = null;
+    return false;
+  }
+}
+
 export async function runPairFraudDetection({
   imageEntries,
   maxFeatures,
@@ -346,7 +434,9 @@ export async function runPairFraudDetection({
         id: items.length,
         appNo: entry.appNo,
         applicationId: entry.applicationId,
+        historicalNegligence: Boolean(entry.historicalNegligence),
         beneficiary: entry.beneficiary,
+        beneficiaryKey: normalizeBeneficiaryKey(entry.beneficiary),
         sanction: entry.sanction,
         assetId: entry.assetId,
         hasSerial: entry.hasSerial,
@@ -357,8 +447,11 @@ export async function runPairFraudDetection({
         exif,
         canvas: null,
         ringCanvas: null,
+        focusedCanvas: null,
         kp: null,
         des: null,
+        focusedKp: null,
+        focusedDes: null,
       });
     } catch {
       // Skip unreadable images to match the previous behavior of soft-failing bad files.
@@ -424,16 +517,40 @@ export async function runPairFraudDetection({
 
   const validItems = items.filter((item) => item.des && item.des.rows >= 10);
   const candidatePairs = [];
+  const seenCandidatePairs = new Set();
+
+  function addCandidatePair(leftIndex, rightIndex, gpsDist, samePerson, historicalLink) {
+    const key = `${leftIndex}:${rightIndex}`;
+    if (seenCandidatePairs.has(key)) return;
+    seenCandidatePairs.add(key);
+    candidatePairs.push({
+      leftIndex,
+      rightIndex,
+      gpsDist,
+      samePerson,
+      historicalLink,
+    });
+  }
+
   for (let a = 0; a < validItems.length; a += 1) {
     for (let b = a + 1; b < validItems.length; b += 1) {
       const left = validItems[a];
       const right = validItems[b];
+      const samePerson =
+        Boolean(left.beneficiaryKey) &&
+        left.beneficiaryKey === right.beneficiaryKey &&
+        Boolean(left.appNo) &&
+        Boolean(right.appNo) &&
+        left.appNo !== right.appNo;
+      const historicalLink = Boolean(left.historicalNegligence || right.historicalNegligence);
       const hasGps = left.exif.lat !== null && right.exif.lat !== null;
       if (hasGps) {
         const distance = haversine(left.exif.lat, left.exif.lon, right.exif.lat, right.exif.lon);
-        if (distance <= gpsRadius * 4) candidatePairs.push([a, b, distance]);
+        if (distance <= gpsRadius * 4 || samePerson || historicalLink) {
+          addCandidatePair(a, b, distance, samePerson, historicalLink);
+        }
       } else {
-        candidatePairs.push([a, b, null]);
+        addCandidatePair(a, b, null, samePerson, historicalLink);
       }
     }
   }
@@ -451,25 +568,50 @@ export async function runPairFraudDetection({
   const matchStartedAt = performance.now();
   for (let index = 0; index < candidatePairs.length; index += 1) {
     if (shouldStop?.()) throw new Error("SCAN_STOPPED");
-    const [leftIndex, rightIndex, gpsDist] = candidatePairs[index];
-    const left = validItems[leftIndex];
-    const right = validItems[rightIndex];
-    const match = strictMatch(left, right);
+    const candidate = candidatePairs[index];
+    const left = validItems[candidate.leftIndex];
+    const right = validItems[candidate.rightIndex];
+    let match = strictMatch(makeMatchSource(left), makeMatchSource(right));
+    let usedFocusedBackground = false;
+
+    if ((candidate.samePerson || candidate.historicalLink) && (!match.pass || match.score < 55)) {
+      const leftReady = ensureFocusedFeatures(left, maxFeatures);
+      const rightReady = ensureFocusedFeatures(right, maxFeatures);
+      if (leftReady && rightReady) {
+        const focusedMatch = strictMatch(
+          makeMatchSource(left, "focused"),
+          makeMatchSource(right, "focused")
+        );
+        if (focusedMatch.pass && (!match.pass || focusedMatch.score >= match.score)) {
+          match = focusedMatch;
+          usedFocusedBackground = true;
+        }
+      }
+    }
 
     if (match.pass) {
-      const gpsClose = gpsDist !== null && gpsDist <= gpsRadius;
+      const gpsClose = candidate.gpsDist !== null && candidate.gpsDist <= gpsRadius;
       const bothGps = left.exif.lat !== null && right.exif.lat !== null;
       const hasDifferentTime = left.exif.time && right.exif.time && left.exif.time !== right.exif.time;
 
       let severity;
-      if (match.score >= 55 || (match.score >= 35 && gpsClose)) severity = "high";
+      if (
+        match.score >= 55 ||
+        (match.score >= 35 &&
+          (gpsClose || candidate.samePerson || candidate.historicalLink))
+      ) {
+        severity = "high";
+      }
       else severity = "medium";
 
       const reasons = [];
       if (match.homoValid) reasons.push("homography_valid");
       if (gpsClose) reasons.push("gps_close");
-      if (bothGps && !gpsClose && gpsDist !== null) reasons.push("gps_far");
+      if (bothGps && !gpsClose && candidate.gpsDist !== null) reasons.push("gps_far");
       if (hasDifferentTime) reasons.push("diff_time");
+      if (candidate.samePerson) reasons.push("same_person_record");
+      if (candidate.historicalLink) reasons.push("historical_negligence_link");
+      if (usedFocusedBackground) reasons.push("focused_background");
 
       flags.push({
         appIdA: left.appNo || left.assetId,
@@ -495,7 +637,7 @@ export async function runPairFraudDetection({
         goodMatches: match.good,
         inliers: match.inliers,
         rawMatches: match.raw,
-        gpsDist,
+        gpsDist: candidate.gpsDist,
         gpsClose,
         reasons,
         homoValid: match.homoValid,
@@ -521,6 +663,8 @@ export async function runPairFraudDetection({
     try {
       item.kp?.delete?.();
       item.des?.delete?.();
+      item.focusedKp?.delete?.();
+      item.focusedDes?.delete?.();
     } catch {
       // no-op
     }
