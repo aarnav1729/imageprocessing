@@ -1,4 +1,5 @@
 const express = require("express");
+const https = require("https");
 const mongoose = require("mongoose");
 const multer = require("multer");
 const ExcelJS = require("exceljs");
@@ -9,11 +10,21 @@ const cors = require("cors");
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
-app.use(express.static(path.join(__dirname, "public")));
 
-const ASSETS_DIR = path.join(__dirname, "assets");
-const UPLOADS_DIR = path.join(__dirname, "uploads");
-const RECTIFY_DIR = path.join(__dirname, "rectifications");
+const ROOT_DIR = path.join(__dirname, "..");
+const PUBLIC_DIR = path.join(ROOT_DIR, "public");
+const ASSETS_DIR = path.join(ROOT_DIR, "assets");
+const UPLOADS_DIR = path.join(ROOT_DIR, "uploads");
+const RECTIFY_DIR = path.join(ROOT_DIR, "rectifications");
+const CERTS_DIR = path.join(__dirname, "certs");
+
+const httpsOptions = {
+  key: fs.readFileSync(path.join(CERTS_DIR, "mydomain.key")),
+  cert: fs.readFileSync(path.join(CERTS_DIR, "d466aacf3db3f299.crt")),
+  ca: fs.readFileSync(path.join(CERTS_DIR, "gd_bundle-g2-g1.crt")),
+};
+
+app.use(express.static(PUBLIC_DIR));
 [ASSETS_DIR, UPLOADS_DIR, RECTIFY_DIR].forEach((d) => {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 });
@@ -1210,12 +1221,12 @@ app.get("/api/stats", async (req, res) => {
 
 // ── SPA fallback ──
 app.get("/{*path}", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  res.sendFile(path.join(PUBLIC_DIR, "index.html"));
 });
 
 const PORT = process.env.PORT || 43443;
-app.listen(PORT, () => {
+https.createServer(httpsOptions, app).listen(PORT, () => {
   console.log(
-    `\n🛡  PanelGuard → http://localhost:${PORT}\n   Assets: ./assets/\n   Rectifications: ./rectifications/\n`
+    `\n🛡  PanelGuard → https://localhost:${PORT}\n   Assets: ${ASSETS_DIR}\n   Rectifications: ${RECTIFY_DIR}\n`
   );
 });
