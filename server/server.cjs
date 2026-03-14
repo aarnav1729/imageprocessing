@@ -1133,7 +1133,7 @@ app.get("/{*path}", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 43443;
 app.listen(PORT, () => {
   console.log(
     `\n🛡  PanelGuard → http://localhost:${PORT}\n   Assets: ./assets/\n   Rectifications: ./rectifications/\n`
