@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { AlertTriangle, Download, PauseCircle, PlayCircle, RotateCcw, Trash2 } from "lucide-react";
 
@@ -22,8 +23,23 @@ export default function FraudPage({
   onExport,
   onDecision,
 }) {
-  const serialCount = state.rows.filter((row) => row.bucket === "serial").length;
-  const nonSerialCount = state.rows.filter((row) => row.bucket === "nonserial").length;
+  const summaryRows = state.bucket === "all" ? state.allRows : state.allRows.filter((row) => row.bucket === state.bucket);
+  const serialCount = state.allRows.filter((row) => row.bucket === "serial").length;
+  const nonSerialCount = state.allRows.filter((row) => row.bucket === "nonserial").length;
+  const reviewedCount = summaryRows.filter((row) => row.markedFraud === "yes" || row.markedFraud === "no").length;
+  const pendingCount = summaryRows.filter((row) => row.markedFraud === "pending").length;
+  const negligenceCount = summaryRows.filter((row) => row.markedFraud === "yes").length;
+  const clearCount = summaryRows.filter((row) => row.markedFraud === "no").length;
+  const reviewPercent = summaryRows.length ? (reviewedCount / summaryRows.length) * 100 : 0;
+  const savingIds = new Set(state.savingIds || []);
+
+  useEffect(() => {
+    if (!state.restoredId) return;
+    document.getElementById(`fraud-pair-${state.restoredId}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  }, [rows, state.restoredId]);
 
   return (
     <div className="space-y-4">
@@ -123,9 +139,20 @@ export default function FraudPage({
         </CardHeader>
         <CardContent className="space-y-4">
           {progress ? <ProgressPanel progress={progress} /> : null}
+          <ReviewProgress
+            total={summaryRows.length}
+            reviewed={reviewedCount}
+            pending={pendingCount}
+            negligence={negligenceCount}
+            cleared={clearCount}
+            percent={reviewPercent}
+            visible={rows.length}
+            decisionFilter={state.markedFraud}
+          />
 
-          <div className="grid gap-3 md:grid-cols-3">
-            <Metric label="Stored pairs" value={state.rows.length} />
+          <div className="grid gap-3 md:grid-cols-4">
+            <Metric label="Matched pairs" value={summaryRows.length} />
+            <Metric label="Remaining queue" value={pendingCount} />
             <Metric label="Serial pairs" value={serialCount} />
             <Metric label="No-serial pairs" value={nonSerialCount} />
           </div>
@@ -149,7 +176,12 @@ export default function FraudPage({
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.02 }}
                   >
-                    <PairCard flag={flag} onDecision={onDecision} />
+                    <PairCard
+                      flag={flag}
+                      onDecision={onDecision}
+                      restored={state.restoredId === flag._id}
+                      saving={savingIds.has(flag._id)}
+                    />
                   </motion.div>
                 ))
               )}
@@ -161,10 +193,13 @@ export default function FraudPage({
   );
 }
 
-function PairCard({ flag, onDecision }) {
+function PairCard({ flag, onDecision, restored, saving }) {
   const severityVariant = flag.severity === "high" ? "danger" : "warning";
   return (
-    <Card className="overflow-hidden">
+    <Card
+      className={`overflow-hidden transition-all ${restored ? "ring-2 ring-danger/40 shadow-[0_0_0_6px_rgba(165,58,79,0.08)]" : ""}`}
+      id={`fraud-pair-${flag._id}`}
+    >
       <CardContent className="space-y-4 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -172,6 +207,8 @@ function PairCard({ flag, onDecision }) {
             <Badge variant="ghost">{flag.bucket}</Badge>
             <Badge variant="primary">{flag.score}%</Badge>
             <DecisionBadge value={flag.markedFraud} />
+            {saving ? <Badge variant="warning">Saving...</Badge> : null}
+            {restored ? <Badge variant="danger">Save failed</Badge> : null}
           </div>
           <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
             {flag.inliers} inliers · {flag.goodMatches} good · {flag.rawMatches} raw
@@ -209,13 +246,13 @@ function PairCard({ flag, onDecision }) {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="destructive" onClick={() => onDecision(flag._id, "yes")}>
+          <Button size="sm" variant="destructive" disabled={saving} onClick={() => onDecision(flag._id, "yes")}>
             Mark negligence
           </Button>
-          <Button size="sm" variant="outline" onClick={() => onDecision(flag._id, "no")}>
+          <Button size="sm" variant="outline" disabled={saving} onClick={() => onDecision(flag._id, "no")}>
             Mark clear
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => onDecision(flag._id, "pending")}>
+          <Button size="sm" variant="ghost" disabled={saving} onClick={() => onDecision(flag._id, "pending")}>
             <RotateCcw className="h-3.5 w-3.5" />
             Reset
           </Button>
@@ -261,6 +298,40 @@ function ProgressPanel({ progress }) {
   );
 }
 
+function ReviewProgress({ total, reviewed, pending, negligence, cleared, percent, visible, decisionFilter }) {
+  const visibleLabel =
+    decisionFilter === "pending"
+      ? `${pending} remaining in queue`
+      : decisionFilter === "yes"
+        ? `${visible} negligence pairs visible`
+        : decisionFilter === "no"
+          ? `${visible} clear pairs visible`
+          : `${visible} pairs visible`;
+  return (
+    <div className="rounded-xl border border-border bg-secondary/60 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium">Review completion</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {reviewed} reviewed of {total} matched pairs
+            {total ? ` · ${visibleLabel}` : ""}
+          </div>
+        </div>
+        <div className="text-sm font-medium text-primary">{Math.round(percent)}%</div>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#d9e4f2]">
+        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round(percent)}%` }} />
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-4">
+        <ReviewStat label="Reviewed" value={reviewed} tone="primary" />
+        <ReviewStat label="Pending" value={pending} tone="muted" />
+        <ReviewStat label="Negligence" value={negligence} tone="danger" />
+        <ReviewStat label="Clear" value={cleared} tone="success" />
+      </div>
+    </div>
+  );
+}
+
 function Metric({ label, value }) {
   return (
     <div className="rounded-xl border border-border bg-secondary/60 p-4">
@@ -274,6 +345,25 @@ function DecisionBadge({ value }) {
   if (value === "yes") return <Badge variant="danger">Negligence</Badge>;
   if (value === "no") return <Badge variant="success">Clear</Badge>;
   return <Badge variant="ghost">Pending</Badge>;
+}
+
+function ReviewStat({ label, value, tone }) {
+  const tones = {
+    primary: "bg-[#edf4ff] text-[#214a8a]",
+    muted: "bg-[#eef2f7] text-[#5b6a7d]",
+    danger: "bg-[#fff0f3] text-[#a53a4f]",
+    success: "bg-[#edf9f2] text-[#25734e]",
+  };
+
+  return (
+    <div className="rounded-lg border border-border/80 bg-white/70 px-3 py-2">
+      <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
+      <div className="mt-1 flex items-center justify-between">
+        <div className="text-sm font-semibold">{value}</div>
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${tones[tone]}`}>{label}</span>
+      </div>
+    </div>
+  );
 }
 
 function FilterSelect({ value, onChange, children }) {
